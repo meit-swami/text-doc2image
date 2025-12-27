@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Image } from 'lucide-react';
+import { Image, Sparkles } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { FileDropzone } from '@/components/FileDropzone';
@@ -8,14 +8,17 @@ import { OCRSettings } from '@/components/OCRSettings';
 import { ConversionProgress } from '@/components/ConversionProgress';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { recognizeImage, OCRLanguage } from '@/lib/ocr';
-import { createDocxFromOCRBlocks } from '@/lib/docx-generator';
+import { createDocxFromOCRBlocks, createDocxFromOCRBlocksEnhanced } from '@/lib/docx-generator';
 import { saveConversion } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { DetectionResult } from '@/lib/document-detector';
 
 const ImageToDocx = () => {
   const { t } = useLanguage();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [ocrLanguage, setOcrLanguage] = useState<OCRLanguage>('eng');
+  const [enhancedMode, setEnhancedMode] = useState(true); // Default to enhanced mode
   const [isConverting, setIsConverting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
@@ -23,11 +26,13 @@ const ImageToDocx = () => {
   const [isError, setIsError] = useState(false);
   const [outputBlob, setOutputBlob] = useState<Blob | undefined>();
   const [outputFileName, setOutputFileName] = useState<string | undefined>();
+  const [detectedDocType, setDetectedDocType] = useState<DetectionResult | null>(null);
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
     setIsComplete(false);
     setIsError(false);
+    setDetectedDocType(null);
   };
 
   const handleConvert = useCallback(async () => {
@@ -36,6 +41,7 @@ const ImageToDocx = () => {
     setIsConverting(true);
     setProgress(0);
     setIsError(false);
+    setDetectedDocType(null);
 
     try {
       // Read image file
@@ -52,20 +58,37 @@ const ImageToDocx = () => {
         selectedFile,
         ocrLanguage,
         (prog, stat) => {
-          setProgress(prog * 0.8);
+          setProgress(prog * 0.7);
           setStatus(stat);
         }
       );
 
-      setProgress(80);
-      setStatus(t.conversion.creatingDocument);
+      setProgress(70);
+      setStatus(enhancedMode ? 'Analyzing document structure...' : t.conversion.creatingDocument);
 
-      // Create DOCX using OCR blocks with position data for better layout
-      const docxBlob = await createDocxFromOCRBlocks(
-        result.blocks,
-        imageDimensions.width,
-        imageDimensions.height
-      );
+      let docxBlob: Blob;
+      
+      if (enhancedMode) {
+        // Use enhanced conversion with document detection and templates
+        setProgress(80);
+        setStatus('Applying smart template...');
+        
+        const enhancedResult = await createDocxFromOCRBlocksEnhanced(
+          result.blocks,
+          imageDimensions.width,
+          imageDimensions.height
+        );
+        
+        docxBlob = enhancedResult.docxBlob;
+        setDetectedDocType(enhancedResult.detectedType);
+      } else {
+        // Use basic conversion
+        docxBlob = await createDocxFromOCRBlocks(
+          result.blocks,
+          imageDimensions.width,
+          imageDimensions.height
+        );
+      }
       
       const fileName = selectedFile.name.replace(/\.[^/.]+$/, '') + '.docx';
       
@@ -92,7 +115,7 @@ const ImageToDocx = () => {
     } finally {
       setIsConverting(false);
     }
-  }, [selectedFile, ocrLanguage, t]);
+  }, [selectedFile, ocrLanguage, enhancedMode, t]);
 
   const handleReset = () => {
     setSelectedFile(null);
@@ -103,6 +126,7 @@ const ImageToDocx = () => {
     setIsError(false);
     setOutputBlob(undefined);
     setOutputFileName(undefined);
+    setDetectedDocType(null);
   };
 
   return (
@@ -145,6 +169,8 @@ const ImageToDocx = () => {
                   <OCRSettings
                     language={ocrLanguage}
                     onLanguageChange={setOcrLanguage}
+                    enhancedMode={enhancedMode}
+                    onEnhancedModeChange={setEnhancedMode}
                   />
 
                   <Button
@@ -152,6 +178,7 @@ const ImageToDocx = () => {
                     size="lg"
                     className="w-full gap-2"
                   >
+                    {enhancedMode && <Sparkles className="h-4 w-4" />}
                     Convert to Word
                   </Button>
                 </motion.div>
@@ -160,15 +187,37 @@ const ImageToDocx = () => {
           )}
 
           {(isConverting || isComplete || isError) && (
-            <ConversionProgress
-              progress={progress}
-              status={status}
-              isComplete={isComplete}
-              isError={isError}
-              outputBlob={outputBlob}
-              outputFileName={outputFileName}
-              onReset={handleReset}
-            />
+            <div className="space-y-4">
+              <ConversionProgress
+                progress={progress}
+                status={status}
+                isComplete={isComplete}
+                isError={isError}
+                outputBlob={outputBlob}
+                outputFileName={outputFileName}
+                onReset={handleReset}
+              />
+              
+              {/* Show detected document type when complete */}
+              {isComplete && detectedDocType && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-xl border border-border bg-card p-4"
+                >
+                  <div className="flex items-center gap-2 text-sm">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    <span className="text-muted-foreground">{t.ocrSettings.detectedAs}:</span>
+                    <Badge variant="secondary">
+                      {t.ocrSettings.documentTypes[detectedDocType.type as keyof typeof t.ocrSettings.documentTypes]}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      ({detectedDocType.confidence}% confidence)
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+            </div>
           )}
         </div>
       </main>
