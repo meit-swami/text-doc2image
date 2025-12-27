@@ -68,15 +68,19 @@ export const extractTextFromPDF = async (
   const page = await pdf.getPage(pageNumber);
   const textContent = await page.getTextContent();
   
-  const items = textContent.items
-    .filter((item): item is { str: string; transform: number[]; width: number; height: number } => 'str' in item)
-    .map(item => ({
-      str: item.str,
-      x: item.transform[4],
-      y: item.transform[5],
-      width: item.width,
-      height: item.height,
-    }));
+  const items: Array<{ str: string; x: number; y: number; width: number; height: number }> = [];
+  
+  for (const item of textContent.items) {
+    if ('str' in item && 'transform' in item) {
+      items.push({
+        str: item.str,
+        x: item.transform[4],
+        y: item.transform[5],
+        width: (item as any).width || 0,
+        height: (item as any).height || 0,
+      });
+    }
+  }
   
   const text = items.map(item => item.str).join(' ');
   
@@ -90,19 +94,24 @@ export const detectTablesInPDF = async (
   const page = await pdf.getPage(pageNumber);
   const textContent = await page.getTextContent();
   
-  const items = textContent.items
-    .filter((item): item is { str: string; transform: number[]; width: number; height: number } => 'str' in item)
-    .map(item => ({
-      str: item.str,
-      x: item.transform[4],
-      y: item.transform[5],
-      width: item.width,
-      height: item.height,
-    }));
+  type TextItemData = { str: string; x: number; y: number; width: number; height: number };
+  const items: TextItemData[] = [];
+  
+  for (const item of textContent.items) {
+    if ('str' in item && 'transform' in item) {
+      items.push({
+        str: item.str,
+        x: item.transform[4],
+        y: item.transform[5],
+        width: (item as any).width || 0,
+        height: (item as any).height || 0,
+      });
+    }
+  }
   
   // Group items by y-position (rows)
   const tolerance = 5;
-  const rows: Map<number, typeof items> = new Map();
+  const rows: Map<number, TextItemData[]> = new Map();
   
   items.forEach(item => {
     let foundRow = false;
