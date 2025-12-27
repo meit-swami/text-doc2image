@@ -4,6 +4,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { ConverterCard } from '@/components/ConverterCard';
+import { InstallPrompt } from '@/components/InstallPrompt';
 
 const Index = () => {
   const { t } = useLanguage();
@@ -127,6 +128,7 @@ const Index = () => {
       </main>
 
       <Footer />
+      <InstallPrompt />
     </div>
   );
 };

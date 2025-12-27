@@ -71,6 +71,12 @@ export const translations = {
       madeWith: 'Made with',
       forOffline: 'for offline productivity',
     },
+    install: {
+      title: 'Install DocConvert Pro',
+      description: 'Install this app for faster access and offline use. No app store required!',
+      button: 'Install Now',
+      later: 'Maybe Later',
+    },
   },
   hi: {
     appName: 'डॉककन्वर्ट प्रो',
@@ -142,6 +148,12 @@ export const translations = {
       madeWith: 'बनाया गया',
       forOffline: 'ऑफ़लाइन उत्पादकता के लिए',
     },
+    install: {
+      title: 'DocConvert Pro इंस्टॉल करें',
+      description: 'तेज़ एक्सेस और ऑफ़लाइन उपयोग के लिए इस ऐप को इंस्टॉल करें। ऐप स्टोर की ज़रूरत नहीं!',
+      button: 'अभी इंस्टॉल करें',
+      later: 'बाद में',
+    },
   },
   hinglish: {
     appName: 'DocConvert Pro',
@@ -212,6 +224,12 @@ export const translations = {
     footer: {
       madeWith: 'Banaya gaya',
       forOffline: 'offline productivity ke liye',
+    },
+    install: {
+      title: 'DocConvert Pro Install Karein',
+      description: 'Fast access aur offline use ke liye is app ko install karein. App store ki zaroorat nahi!',
+      button: 'Abhi Install Karein',
+      later: 'Baad Mein',
     },
   },
 };
