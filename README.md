@@ -1,73 +1,160 @@
-# Welcome to your Lovable project
+# AI-Enhanced Document Converter
 
-## Project info
+A powerful document conversion tool with AI-powered formatting and layout preservation.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Features
 
-## How can I edit this code?
+### 🔄 Core Conversion Tools
+- **Image to DOCX** - Convert scanned documents/images to editable Word documents
+- **PDF to DOCX** - Convert PDF files to editable Word documents
+- **PDF to Excel** - Extract tabular data from PDFs to spreadsheets
 
-There are several ways of editing your application.
+### 🧠 AI-Enhanced Formatting Mode
 
-**Use Lovable**
+When "Preserve original formatting (AI enhanced)" is enabled, the system prioritizes visual and structural accuracy over raw text extraction.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+---
 
-Changes made via Lovable will be committed automatically to this repo.
+## 📋 Document Type Detection (Automatic)
 
-**Use your preferred IDE**
+After OCR, the system automatically detects document type based on:
+- Heading patterns
+- Alignment (centered titles, left-aligned body)
+- Keywords (Subject, Respected, Notice, Applicant, etc.)
+- Spacing and margin patterns
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Supported Document Types:
+| Type | Detection Keywords |
+|------|-------------------|
+| **Government Letter** | government, ministry, department, official, circular, memo |
+| **Office/Corporate Letter** | company, corporation, pvt, ltd, office, HR, management |
+| **Legal Notice** | advocate, legal, notice, court, plaintiff, defendant, jurisdiction |
+| **Application/Request** | application, request, respected sir, dear sir, kindly, thanking you |
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+If confidence is low, manual override is available.
 
-Follow these steps:
+---
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+## 📄 Smart Templates (Auto-Applied)
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+Once document type is detected, a structural template is applied:
 
-# Step 3: Install the necessary dependencies.
-npm i
+### Government Letter Template
+- Centered or left-aligned department name
+- Reference number & date alignment
+- Subject line with proper spacing
+- Formal paragraph spacing
+- Signature block at bottom
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+### Office Letter Template
+- Company header formatting
+- Subject highlighted
+- Consistent paragraph spacing
+- Signature + designation block
 
-**Edit a file directly in GitHub**
+### Legal Notice Template
+- Advocate header
+- Clear paragraph separation
+- Justified body text
+- Structured sender/receiver blocks
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Application Template
+- Proper salutation
+- Short paragraph spacing
+- Clearly separated closing & signature
 
-**Use GitHub Codespaces**
+> **Note:** Templates organize and space content correctly without overwriting it.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+---
 
-## What technologies are used for this project?
+## 📐 Layout Reconstruction Rules
 
-This project is built with:
+Using OCR layout data (bounding boxes & line positions), the system preserves:
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- ✅ Original line breaks
+- ✅ Paragraph separation
+- ✅ Indentation (left/right margins)
+- ✅ Alignment (center / left / justified)
+- ✅ Page breaks
 
-## How can I deploy this project?
+**Never merges all text into one paragraph.**
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+---
 
-## Can I connect a custom domain to my Lovable project?
+## 📏 Auto Spacing & Indentation Rules
 
-Yes, you can!
+Spacing is applied dynamically based on detected document type:
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+| Element | Spacing Rule |
+|---------|-------------|
+| Heading | Extra top & bottom spacing |
+| Subject line | Spacing before body |
+| Paragraphs | Consistent line height |
+| Signature block | Pushed toward bottom |
+| Address blocks | Left aligned with indentation |
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Spacing visually matches the original document as closely as possible.
+
+---
+
+## 🧾 DOCX Output Requirements
+
+Generated DOCX files use:
+- **Paragraph styles** (Heading, Body, Signature)
+- **Real margins and tabs** (not spaces)
+- **Line spacing controls**
+- **Page break handling**
+
+Output looks professionally typed, not OCR-dumped.
+
+---
+
+## 🚫 Explicit Restrictions
+
+| ❌ Don't | ✅ Do |
+|----------|-------|
+| Output plain text | Use structured paragraphs |
+| Collapse spacing | Preserve original spacing |
+| Ignore indentation | Maintain visual layout |
+| Prioritize speed over accuracy | Prioritize formatting accuracy |
+
+---
+
+## 🌐 Multi-Language OCR Support
+
+- English
+- Hindi  
+- English + Hindi (bilingual documents)
+
+---
+
+## 🛠️ Technology Stack
+
+- **React** + **TypeScript** + **Vite**
+- **Tesseract.js** - OCR engine
+- **docx** - DOCX generation
+- **xlsx** - Excel generation
+- **Tailwind CSS** - Styling
+- **shadcn/ui** - UI components
+
+---
+
+## 📱 PWA Support
+
+Install as a Progressive Web App for offline document conversion.
+
+---
+
+## Usage
+
+1. Upload an image or PDF
+2. Select OCR language
+3. Enable "Preserve original formatting (AI enhanced)" for best results
+4. Click Convert
+5. Download your formatted DOCX file
+
+---
+
+## License
+
+MIT
