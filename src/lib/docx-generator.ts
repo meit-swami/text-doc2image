@@ -14,6 +14,8 @@ import {
   WidthType,
   BorderStyle,
 } from 'docx';
+import { detectDocumentType, DocumentType, DetectionResult } from './document-detector';
+import { segmentDocument, applyTemplate, getDocumentStyles } from './document-templates';
 
 interface TextBlock {
   text: string;
@@ -29,10 +31,15 @@ interface PageContent {
   pageNumber: number;
 }
 
-interface OCRBlock {
+export interface OCRBlock {
   text: string;
   bbox: { x0: number; y0: number; x1: number; y1: number };
   confidence: number;
+}
+
+export interface EnhancedConversionResult {
+  docxBlob: Blob;
+  detectedType: DetectionResult;
 }
 
 // Helper to detect if block is on the right side of page
@@ -161,6 +168,9 @@ export const createDocxFromPages = async (
   return buffer;
 };
 
+/**
+ * Standard OCR blocks to DOCX conversion (basic mode)
+ */
 export const createDocxFromOCRBlocks = async (
   blocks: OCRBlock[],
   pageWidth: number,
@@ -359,4 +369,61 @@ export const createDocxFromOCRBlocks = async (
 
   const buffer = await Packer.toBlob(doc);
   return buffer;
+};
+
+/**
+ * AI-Enhanced OCR blocks to DOCX conversion with document type detection and smart templates
+ */
+export const createDocxFromOCRBlocksEnhanced = async (
+  blocks: OCRBlock[],
+  pageWidth: number,
+  pageHeight: number,
+  overrideDocumentType?: DocumentType
+): Promise<EnhancedConversionResult> => {
+  // Filter out low confidence and empty blocks
+  const validBlocks = blocks.filter(b => b.confidence > 25 && b.text.trim().length > 0);
+  
+  // Detect document type
+  const detectedType = detectDocumentType(validBlocks, pageWidth, pageHeight);
+  const documentType = overrideDocumentType || detectedType.type;
+  
+  // Segment document into logical regions
+  const regions = segmentDocument(validBlocks, pageWidth, pageHeight);
+  
+  // Apply appropriate template based on document type
+  const documentChildren = applyTemplate(documentType, regions, pageWidth);
+  
+  // Get document-specific styles
+  const styles = getDocumentStyles(documentType);
+  
+  // Create the document with proper styling
+  const doc = new Document({
+    styles,
+    sections: [
+      {
+        properties: {
+          page: {
+            margin: {
+              top: 1440,   // 1 inch
+              right: 1440,
+              bottom: 1440,
+              left: 1440,
+            },
+          },
+        },
+        children: documentChildren.length > 0 ? documentChildren : [
+          new Paragraph({
+            children: [new TextRun({ text: 'No content detected', italics: true })],
+          }),
+        ],
+      },
+    ],
+  });
+
+  const buffer = await Packer.toBlob(doc);
+  
+  return {
+    docxBlob: buffer,
+    detectedType,
+  };
 };
