@@ -8,7 +8,7 @@ import { OCRSettings } from '@/components/OCRSettings';
 import { ConversionProgress } from '@/components/ConversionProgress';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { recognizeImage, OCRLanguage } from '@/lib/ocr';
-import { createDocxFromText } from '@/lib/docx-generator';
+import { createDocxFromOCRBlocks } from '@/lib/docx-generator';
 import { saveConversion } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
 
@@ -41,6 +41,13 @@ const ImageToDocx = () => {
       // Read image file
       setStatus(t.conversion.extractingText);
       
+      // Get image dimensions for layout calculation
+      const imageDimensions = await new Promise<{ width: number; height: number }>((resolve) => {
+        const img = new window.Image();
+        img.onload = () => resolve({ width: img.width, height: img.height });
+        img.src = URL.createObjectURL(selectedFile);
+      });
+      
       const result = await recognizeImage(
         selectedFile,
         ocrLanguage,
@@ -53,8 +60,12 @@ const ImageToDocx = () => {
       setProgress(80);
       setStatus(t.conversion.creatingDocument);
 
-      // Create DOCX
-      const docxBlob = await createDocxFromText(result.text);
+      // Create DOCX using OCR blocks with position data for better layout
+      const docxBlob = await createDocxFromOCRBlocks(
+        result.blocks,
+        imageDimensions.width,
+        imageDimensions.height
+      );
       
       const fileName = selectedFile.name.replace(/\.[^/.]+$/, '') + '.docx';
       
