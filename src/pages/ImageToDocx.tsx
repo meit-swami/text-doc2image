@@ -8,11 +8,14 @@ import { OCRSettings } from '@/components/OCRSettings';
 import { ConversionProgress } from '@/components/ConversionProgress';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { recognizeImage, OCRLanguage } from '@/lib/ocr';
-import { createDocxFromOCRBlocks, createDocxFromOCRBlocksEnhanced } from '@/lib/docx-generator';
+import { createDocxFromOCRBlocks } from '@/lib/docx-generator';
+import { processWithLocalLLM } from '@/lib/local-llm';
+import { generateBlockAwareDocx } from '@/lib/block-aware-docx';
 import { saveConversion } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { DetectionResult } from '@/lib/document-detector';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DetectionResult, DocumentType, getDocumentTypeLabel } from '@/lib/document-detector';
 
 const ImageToDocx = () => {
   const { t } = useLanguage();
@@ -27,7 +30,7 @@ const ImageToDocx = () => {
   const [outputBlob, setOutputBlob] = useState<Blob | undefined>();
   const [outputFileName, setOutputFileName] = useState<string | undefined>();
   const [detectedDocType, setDetectedDocType] = useState<DetectionResult | null>(null);
-
+  const [manualOverride, setManualOverride] = useState<DocumentType | null>(null);
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
     setIsComplete(false);
@@ -64,23 +67,37 @@ const ImageToDocx = () => {
       );
 
       setProgress(70);
-      setStatus(enhancedMode ? 'Analyzing document structure...' : t.conversion.creatingDocument);
+      setStatus(enhancedMode ? 'Analyzing document layout with AI...' : t.conversion.creatingDocument);
 
       let docxBlob: Blob;
       
       if (enhancedMode) {
-        // Use enhanced conversion with document detection and templates
-        setProgress(80);
-        setStatus('Applying smart template...');
+        // Use local LLM for layout-aware processing
+        setProgress(75);
+        setStatus('Processing blocks with local AI...');
         
-        const enhancedResult = await createDocxFromOCRBlocksEnhanced(
+        const structuredDoc = await processWithLocalLLM(
           result.blocks,
           imageDimensions.width,
-          imageDimensions.height
+          imageDimensions.height,
+          (prog, stat) => {
+            setProgress(75 + prog * 0.15);
+            setStatus(stat);
+          }
         );
         
-        docxBlob = enhancedResult.docxBlob;
-        setDetectedDocType(enhancedResult.detectedType);
+        setProgress(90);
+        setStatus('Generating block-aware DOCX...');
+        
+        const blockAwareResult = await generateBlockAwareDocx(
+          structuredDoc,
+          imageDimensions.width,
+          imageDimensions.height,
+          manualOverride || undefined
+        );
+        
+        docxBlob = blockAwareResult.docxBlob;
+        setDetectedDocType(blockAwareResult.detectedType);
       } else {
         // Use basic conversion
         docxBlob = await createDocxFromOCRBlocks(
@@ -127,7 +144,10 @@ const ImageToDocx = () => {
     setOutputBlob(undefined);
     setOutputFileName(undefined);
     setDetectedDocType(null);
+    setManualOverride(null);
   };
+
+  const documentTypes: DocumentType[] = ['government_letter', 'office_letter', 'legal_notice', 'application', 'general'];
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -172,6 +192,27 @@ const ImageToDocx = () => {
                     enhancedMode={enhancedMode}
                     onEnhancedModeChange={setEnhancedMode}
                   />
+
+                  {enhancedMode && (
+                    <div className="rounded-lg border border-border bg-card p-4">
+                      <label className="text-sm font-medium text-foreground mb-2 block">
+                        Document Type Override (optional)
+                      </label>
+                      <Select value={manualOverride || ''} onValueChange={(v) => setManualOverride(v as DocumentType || null)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Auto-detect" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">Auto-detect</SelectItem>
+                          {documentTypes.map(type => (
+                            <SelectItem key={type} value={type}>
+                              {getDocumentTypeLabel(type)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   <Button
                     onClick={handleConvert}
