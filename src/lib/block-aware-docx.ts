@@ -256,7 +256,7 @@ const processHeaderBlocks = (
 
 /**
  * Create a single DOCX paragraph from a structured block
- * Each block becomes exactly one paragraph - no merging
+ * Each block becomes exactly one paragraph - preserving original line breaks
  */
 const createParagraphFromBlock = (
   block: StructuredBlock,
@@ -276,27 +276,45 @@ const createParagraphFromBlock = (
   }));
 
   // Calculate spacing in twips (1 point = 20 twips)
-  let spacingBefore = block.spacingBefore * 20;
-  let spacingAfter = block.spacingAfter * 20;
-
-  // Ensure minimum spacing
-  if (block.isFirstInParagraph && spacingBefore < 120) {
-    spacingBefore = 120;
+  // Use smaller default spacing to keep lines close together like original
+  let spacingBefore = 0;
+  let spacingAfter = 0;
+  
+  // Only add significant spacing at paragraph boundaries
+  if (block.isFirstInParagraph && prevBlock) {
+    // New paragraph - add visible gap
+    spacingBefore = Math.max(block.spacingBefore * 20, 160); // At least 8pt
+  } else if (prevBlock) {
+    // Same paragraph - minimal spacing (just line height)
+    spacingBefore = Math.min(block.spacingBefore * 20, 40); // Max 2pt between lines
   }
-  if (block.isLastInParagraph && spacingAfter < 80) {
-    spacingAfter = 80;
+  
+  if (block.isLastInParagraph) {
+    // End of paragraph - small gap before next paragraph starts
+    spacingAfter = Math.max(block.spacingAfter * 20, 80); // At least 4pt
+  } else {
+    // Within paragraph - minimal spacing
+    spacingAfter = Math.min(block.spacingAfter * 20, 40);
   }
 
-  // Apply type-specific spacing
-  if (block.type === 'subject') {
+  // Apply type-specific spacing for special blocks
+  if (block.type === 'header' || block.type === 'subheader') {
+    spacingBefore = Math.max(spacingBefore, 120);
+    spacingAfter = Math.max(spacingAfter, 100);
+  } else if (block.type === 'subject') {
     spacingBefore = Math.max(spacingBefore, 240);
     spacingAfter = Math.max(spacingAfter, 200);
   } else if (block.type === 'salutation') {
-    spacingBefore = Math.max(spacingBefore, 160);
+    spacingBefore = Math.max(spacingBefore, 200);
     spacingAfter = Math.max(spacingAfter, 120);
   } else if (block.type === 'signature') {
-    spacingBefore = Math.max(spacingBefore, 60);
+    spacingBefore = Math.max(spacingBefore, 200);
     spacingAfter = Math.max(spacingAfter, 40);
+  } else if (block.type === 'date' || block.type === 'reference') {
+    spacingBefore = Math.max(spacingBefore, 60);
+    spacingAfter = Math.max(spacingAfter, 60);
+  } else if (block.type === 'address') {
+    spacingAfter = 40; // Tight spacing for address lines
   }
 
   // Determine alignment - use block's detected alignment
@@ -316,10 +334,8 @@ const createParagraphFromBlock = (
     indent.left = getIndentation(block.indentation);
   }
   
-  // First line indent for paragraphs (but not for special blocks)
-  if (block.type === 'paragraph' && block.text.length > 100) {
-    indent.firstLine = 720; // 0.5 inch
-  }
+  // Don't auto-indent first lines - preserve original layout
+  // Only add first line indent if explicitly detected
 
   return new Paragraph({
     children: textRuns,
@@ -328,7 +344,7 @@ const createParagraphFromBlock = (
     spacing: { 
       before: spacingBefore, 
       after: spacingAfter,
-      line: 276, // 1.15 line spacing
+      line: 240, // Single line spacing (240 twips = 1.0)
     },
     indent: Object.keys(indent).length > 0 ? indent : undefined,
   });

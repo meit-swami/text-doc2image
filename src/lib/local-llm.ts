@@ -297,52 +297,96 @@ const detectFontSize = (
 };
 
 /**
- * Group blocks into logical paragraphs based on vertical proximity
+ * Check if a block type should always be kept separate (not merged with adjacent blocks)
+ */
+const isAlwaysSeparateBlock = (type: BlockType): boolean => {
+  const separateTypes: BlockType[] = [
+    'header', 'subheader', 'subject', 'salutation', 
+    'signature', 'date', 'reference', 'address', 'footer'
+  ];
+  return separateTypes.includes(type);
+};
+
+/**
+ * Calculate average line height from blocks
+ */
+const calculateAverageLineHeight = (blocks: OCRBlock[]): number => {
+  if (blocks.length === 0) return 20;
+  const heights = blocks.map(b => b.bbox.y1 - b.bbox.y0);
+  return heights.reduce((a, b) => a + b, 0) / heights.length;
+};
+
+/**
+ * Smarter paragraph grouping that:
+ * 1. Detects natural paragraph boundaries based on spacing
+ * 2. Keeps header/special lines separate
+ * 3. Preserves each line as a separate block for accurate line breaks
  */
 const groupIntoParagraphs = (
   blocks: OCRBlock[],
-  pageHeight: number
-): OCRBlock[][] => {
+  pageHeight: number,
+  pageWidth: number,
+  preserveLineBreaks: boolean = true
+): { blocks: OCRBlock[]; isNewParagraph: boolean }[] => {
   if (blocks.length === 0) return [];
   
   const sortedBlocks = [...blocks].sort((a, b) => a.bbox.y0 - b.bbox.y0);
-  const paragraphs: OCRBlock[][] = [];
-  let currentParagraph: OCRBlock[] = [sortedBlocks[0]];
+  const avgLineHeight = calculateAverageLineHeight(sortedBlocks);
   
-  const lineHeightThreshold = pageHeight * 0.025; // 2.5% of page height
-  const paragraphGapThreshold = pageHeight * 0.04; // 4% of page height
+  // Thresholds based on average line height for more accurate detection
+  const normalLineGap = avgLineHeight * 0.3; // Normal gap between lines in same paragraph
+  const paragraphGapThreshold = avgLineHeight * 0.8; // Gap that indicates new paragraph
+  const largeGapThreshold = avgLineHeight * 1.5; // Definitely a new section
   
-  for (let i = 1; i < sortedBlocks.length; i++) {
-    const prevBlock = sortedBlocks[i - 1];
+  const result: { blocks: OCRBlock[]; isNewParagraph: boolean }[] = [];
+  
+  for (let i = 0; i < sortedBlocks.length; i++) {
     const currentBlock = sortedBlocks[i];
-    const gap = currentBlock.bbox.y0 - prevBlock.bbox.y1;
+    const prevBlock = i > 0 ? sortedBlocks[i - 1] : null;
     
-    if (gap > paragraphGapThreshold) {
-      // New paragraph
-      paragraphs.push(currentParagraph);
-      currentParagraph = [currentBlock];
-    } else if (gap > lineHeightThreshold) {
-      // Possible new paragraph, check alignment
-      const prevCenter = (prevBlock.bbox.x0 + prevBlock.bbox.x1) / 2;
-      const currentCenter = (currentBlock.bbox.x0 + currentBlock.bbox.x1) / 2;
+    let isNewParagraph = i === 0;
+    
+    if (prevBlock) {
+      const gap = currentBlock.bbox.y0 - prevBlock.bbox.y1;
+      const prevBlockType = classifyBlockType(prevBlock, pageWidth, pageHeight, i - 1, sortedBlocks.length);
+      const currentBlockType = classifyBlockType(currentBlock, pageWidth, pageHeight, i, sortedBlocks.length);
       
-      if (Math.abs(prevCenter - currentCenter) > pageHeight * 0.1) {
-        // Different alignment, new paragraph
-        paragraphs.push(currentParagraph);
-        currentParagraph = [currentBlock];
-      } else {
-        currentParagraph.push(currentBlock);
+      // Check if either block type should always be separate
+      if (isAlwaysSeparateBlock(prevBlockType.type) || isAlwaysSeparateBlock(currentBlockType.type)) {
+        isNewParagraph = true;
       }
-    } else {
-      currentParagraph.push(currentBlock);
+      // Large gap always means new paragraph
+      else if (gap > largeGapThreshold) {
+        isNewParagraph = true;
+      }
+      // Medium gap with alignment change
+      else if (gap > paragraphGapThreshold) {
+        isNewParagraph = true;
+      }
+      // Check for significant alignment difference
+      else {
+        const prevLeft = prevBlock.bbox.x0;
+        const currentLeft = currentBlock.bbox.x0;
+        const indentDiff = Math.abs(currentLeft - prevLeft);
+        
+        // Significant indent change suggests new paragraph
+        if (indentDiff > pageWidth * 0.08) {
+          isNewParagraph = true;
+        }
+        // Short previous line followed by normal line (end of paragraph)
+        else if ((prevBlock.bbox.x1 - prevBlock.bbox.x0) < pageWidth * 0.5 && 
+                 (currentBlock.bbox.x1 - currentBlock.bbox.x0) > pageWidth * 0.6) {
+          isNewParagraph = true;
+        }
+      }
     }
+    
+    // When preserving line breaks, each block is added separately
+    // The isNewParagraph flag indicates if extra spacing should be added
+    result.push({ blocks: [currentBlock], isNewParagraph });
   }
   
-  if (currentParagraph.length > 0) {
-    paragraphs.push(currentParagraph);
-  }
-  
-  return paragraphs;
+  return result;
 };
 
 /**
@@ -428,20 +472,21 @@ export const processWithLocalLLM = async (
   
   onProgress?.(30, 'Classifying content blocks...');
   
-  // Process each block
+  // Process each block with smarter paragraph detection
   const structuredBlocks: StructuredBlock[] = [];
-  const paragraphGroups = groupIntoParagraphs(sortedBlocks, pageHeight);
+  const paragraphGroups = groupIntoParagraphs(sortedBlocks, pageHeight, pageWidth, true);
   
   let readingOrder = 0;
   let processedCount = 0;
   
-  for (const paragraph of paragraphGroups) {
-    for (let i = 0; i < paragraph.length; i++) {
-      const block = paragraph[i];
-      const prevBlock = i > 0 ? paragraph[i - 1] : (structuredBlocks.length > 0 ? validBlocks.find(b => 
-        b.text === structuredBlocks[structuredBlocks.length - 1].text
-      ) || null : null);
-      const nextBlock = i < paragraph.length - 1 ? paragraph[i + 1] : null;
+  for (let groupIdx = 0; groupIdx < paragraphGroups.length; groupIdx++) {
+    const group = paragraphGroups[groupIdx];
+    const isNewParagraph = group.isNewParagraph;
+    
+    for (let i = 0; i < group.blocks.length; i++) {
+      const block = group.blocks[i];
+      const prevOCRBlock = processedCount > 0 ? sortedBlocks[processedCount - 1] : null;
+      const nextOCRBlock = processedCount < sortedBlocks.length - 1 ? sortedBlocks[processedCount + 1] : null;
       
       // Classify block type
       const classification = classifyBlockType(
@@ -458,8 +503,15 @@ export const processWithLocalLLM = async (
       // Detect indentation
       const indentation = detectIndentation(block, pageWidth, baseMargin);
       
-      // Calculate spacing
-      const spacing = calculateSpacing(block, prevBlock, nextBlock, pageHeight);
+      // Calculate spacing - increase spacing for new paragraphs
+      const baseSpacing = calculateSpacing(block, prevOCRBlock, nextOCRBlock, pageHeight);
+      let spacingBefore = baseSpacing.before;
+      let spacingAfter = baseSpacing.after;
+      
+      // Add extra spacing before new paragraphs
+      if (isNewParagraph && i === 0 && processedCount > 0) {
+        spacingBefore = Math.max(spacingBefore, 12); // At least 12pt before new paragraph
+      }
       
       // Detect font size
       const fontSize = detectFontSize(block, averageHeight);
@@ -469,14 +521,19 @@ export const processWithLocalLLM = async (
       const isAllCaps = text === text.toUpperCase() && /[A-Z]/.test(text);
       const isBold = isAllCaps || classification.type === 'header' || classification.type === 'subject';
       
+      // Each block is its own line - mark paragraph boundaries for DOCX generator
+      const isFirstInParagraph = isNewParagraph && i === 0;
+      const nextGroup = groupIdx < paragraphGroups.length - 1 ? paragraphGroups[groupIdx + 1] : null;
+      const isLastInParagraph = i === group.blocks.length - 1 && (nextGroup?.isNewParagraph ?? true);
+      
       structuredBlocks.push({
         id: `block_${readingOrder}`,
         text: text,
         type: classification.type,
         alignment,
         indentation,
-        spacingBefore: spacing.before,
-        spacingAfter: spacing.after,
+        spacingBefore,
+        spacingAfter,
         isBold,
         isItalic: false,
         isUnderlined: classification.type === 'subject',
@@ -484,8 +541,8 @@ export const processWithLocalLLM = async (
         readingOrder,
         confidence: classification.confidence * block.confidence / 100,
         bbox: block.bbox,
-        isFirstInParagraph: i === 0,
-        isLastInParagraph: i === paragraph.length - 1,
+        isFirstInParagraph,
+        isLastInParagraph,
       });
       
       readingOrder++;
